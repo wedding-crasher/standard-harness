@@ -1,0 +1,15 @@
+[project]
+name = "standard-harness"
+version = "0.0.0"
+description = "Tooling for the standard harness hooks"
+requires-python = ">=3.10"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff==0.17.0",
+    "detect-secrets==1.5.0",
+]
+
+[tool.uv]
+package = false

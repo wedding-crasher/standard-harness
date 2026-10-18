@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "python3 .github/hooks/test-run/run.py",
+        "powershell": "python .github/hooks/test-run/run.py",
+        "timeoutSec": 120
+      }
+    ]
+  }
+}

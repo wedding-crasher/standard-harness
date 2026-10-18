@@ -1,0 +1,5 @@
+interface:
+  display_name: "To Spec"
+  short_description: "Turn a PRD or conversation into local feature specs"
+policy:
+  allow_implicit_invocation: false
