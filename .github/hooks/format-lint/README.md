@@ -1,13 +1,15 @@
 # Implementer Stop: Python formatting and linting
 
-Only the local `implementer` profile runs this hook. Its scoped `Stop` executes
-when it finishes as a subagent, or when that profile is selected directly.
-This formatter is not registered on repository-wide lifecycle events.
-Requires a Copilot CLI version supporting agent-scoped hooks and progress output.
-Restart the CLI after changing the profile. The workspace must also be trusted:
-accept the CLI's folder-trust prompt. Do this only for a repository whose agent
-and hook commands you trust. Merely selecting the agent does not admit its hooks.
-Folder trust is CLI application state, not a `copilot config` setting.
+Registered in `.github/hooks/format-lint.json` on `subagentStop`, using the same
+repository JSON format as `test-run.json`. The command's `--implementer-only`
+option checks the event's `agentName`: only `implementer` completion runs the
+checks. Other subagents silently return `{}` without inspecting files. It does
+not run at main-agent completion, including when `implementer` is selected as
+the main agent. There is no duplicate registration in the agent profile.
+
+Requires a Copilot CLI version supporting repository hooks and progress output.
+Restart the CLI after changing hook registrations. Accept the folder-trust
+prompt only for a repository whose commands you trust.
 
 ## Setup
 
@@ -23,7 +25,8 @@ never installs packages, and never uses the network. If `.venv` is missing the
 hook reports `ERROR` and asks you to run `uv sync`.
 
 Ruff formats, then lints without auto-fixes, using the explicit colocated
-`ruff.toml` for all selected files.
+`ruff.toml` for all selected files. A before/after content comparison detects
+formatting changes; there is no repeated hash check for concurrent edits.
 
 ## Scope
 
@@ -54,14 +57,14 @@ change, rerun affected tests and refresh the report.
 Limits: 15 seconds per Ruff command. This is developer feedback, not a security
 boundary; CLI hooks can fail open or be disabled.
 
-## Manual check and tests
+## Manual check
 
 ```sh
 printf '{"cwd":"%s"}' "$PWD" | python3 .github/hooks/format-lint/run.py
-python3 -m unittest discover -s .github/hooks/format-lint -p 'test_*.py'
 ```
 
 The first command can change selected files.
 
-References: [GitHub agent-scoped hooks](https://docs.github.com/en/copilot/reference/hooks-reference#agent-scoped-hooks),
+References: [GitHub hook configuration](https://docs.github.com/en/copilot/reference/hooks-reference#hook-configuration-format),
+[subagentStop payload](https://docs.github.com/en/copilot/reference/hooks-reference#subagentstop--subagentstop),
 [Ruff configuration](https://docs.astral.sh/ruff/configuration/).

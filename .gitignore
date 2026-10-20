@@ -1,4 +1,5 @@
 /.venv/
+/wheels/
 /reference/
 .ruff_cache/
 __pycache__/

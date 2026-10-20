@@ -1,6 +1,5 @@
-"""Run scoped Stop formatting/linting without invoking another agent."""
+"""Run implementer completion formatting/linting without another agent."""
 
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -63,22 +62,9 @@ def changed_files(root):
     return selected
 
 
-def fingerprint(root, files):
-    digest = hashlib.sha256()
-    for name in files:
-        digest.update(os.fsencode(name) + b"\0")
-        digest.update(hashlib.sha256((root / name).read_bytes()).digest())
-    return digest.hexdigest()
-
-
-def result(status, files, detail, changed=False):
-    return {"status": status, "files": files, "detail": detail, "changed": changed}
-
-
 def check(root, files):
     if not files:
-        return result("SKIP", files, "No changed Python files.")
-    before = fingerprint(root, files)
+        return "SKIP", "No changed Python files.", False
     python = (
         root / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     )
@@ -89,27 +75,25 @@ def check(root, files):
         )
     base = [str(python), "-m", "ruff"]
     options = ["--config", str(HOME / "ruff.toml"), "--no-cache", "--force-exclude"]
+    before = {name: (root / name).read_bytes() for name in files}
     formatter = command([*base, "format", *options, "--", *files], root)
-    format_text = formatter.stdout.decode("utf-8", errors="replace").strip()
-    after = fingerprint(root, files)
+    changed = any((root / name).read_bytes() != text for name, text in before.items())
     if formatter.returncode:
         # Ruff parse errors can echo source text; do not print raw source.
-        return result(
+        return (
             "ERROR",
-            files,
             f"ruff format failed (exit {formatter.returncode}). "
             "Run Ruff on the listed files to inspect syntax/configuration errors.",
-            before != after,
+            changed,
         )
     lint = command(
         [*base, "check", *options, "--output-format", "json", "--", *files], root
     )
     if lint.returncode not in (0, 1):
-        return result(
+        return (
             "ERROR",
-            files,
             f"ruff check failed (exit {lint.returncode}). Inspect Ruff configuration.",
-            before != after,
+            changed,
         )
     try:
         diagnostics = json.loads(lint.stdout)
@@ -123,24 +107,16 @@ def check(root, files):
             f"{name}:{location['row']}:{location['column']} "
             f"{diagnostic['code'] or 'syntax'} {diagnostic['message']}"
         )
-    if fingerprint(root, files) != after:
-        raise CheckError("Python files changed during checks; rerun the hook.")
     status = "PASS" if lint.returncode == 0 and not lines else "FAIL"
-    return result(
-        status,
-        files,
-        "\n".join([format_text, *lines, f"ruff check: exit {lint.returncode}"]),
-        before != after,
-    )
+    return status, "\n".join(lines), changed
 
 
-def decision(report, payload):
-    status = report["status"]
+def decision(status, changed, payload):
     failed = status in {"FAIL", "ERROR"}
     if failed:
         warning = f"[format/lint {status}] The check did not pass; see the format/lint terminal output for locations."
         print(warning, file=sys.stderr)
-    elif report["changed"]:
+    elif changed:
         warning = "[format/lint] Formatting changed files; rerun affected tests and refresh your report."
     else:
         return {}
@@ -162,22 +138,19 @@ def run(payload):
     files = changed_files(root)
     progress(f"[format/lint] Checking {len(files)} Python file(s)...")
     try:
-        report = check(root, files)
+        status, detail, changed = check(root, files)
     except (CheckError, OSError) as error:
-        report = result("ERROR", files, str(error))
-    status = report["status"]
+        status, detail, changed = "ERROR", str(error), False
     if status == "SKIP":
         text = "No changed Python files."
     elif status in {"FAIL", "ERROR"}:
-        text = f"{len(files)} file(s).\nFiles: {json.dumps(files)}\n{report['detail']}"
+        text = f"{len(files)} file(s).\nFiles: {json.dumps(files)}\n{detail}"
     else:
         text = f"{len(files)} file(s)." + (
-            " Formatting changed files; rerun affected tests."
-            if report["changed"]
-            else ""
+            " Formatting changed files; rerun affected tests." if changed else ""
         )
     progress(f"[format/lint {status}] {text}")
-    return decision(report, payload)
+    return decision(status, changed, payload)
 
 
 def main():
@@ -187,7 +160,13 @@ def main():
             raise CheckError("Expected a JSON object on stdin.")
         if "cwd" in payload and not isinstance(payload["cwd"], str):
             raise CheckError("Expected cwd to be a path string.")
-        output = run(payload)
+        if (
+            sys.argv[1:] == ["--implementer-only"]
+            and payload.get("agentName") != "implementer"
+        ):
+            output = {}
+        else:
+            output = run(payload)
     except (CheckError, OSError, ValueError) as error:
         print(f"[format/lint ERROR] {error}", file=sys.stderr)
         progress(f"[format/lint ERROR] {error}")

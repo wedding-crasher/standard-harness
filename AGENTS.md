@@ -90,10 +90,10 @@ test evidence. Findings go back to the implementer; a changed revision gets fres
 evidence and a fresh review. After integrating several tasks, run the integrated
 checks and review the whole change.
 
-The `agentStop` test hook runs only the unittest files the developer lists in
-`.github/hooks/test-run/selection.local.json`, when inputs change. Leave that
-selection unchanged to get a true result; a cached failure is a failure, and a
-selected-test pass does not replace the integrated checks.
+The `agentStop` test hook runs the unittest files the developer lists in
+`.github/hooks/test-run/selection.local.json` on every main-agent completion.
+Leave that selection unchanged to get a true result; a selected-test pass does
+not replace the integrated checks.
 
 ## Return contract
 

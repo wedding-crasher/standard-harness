@@ -1,4 +1,4 @@
-"""Offline Implementer Stop scanning; never serialize scanner secrets or input."""
+"""Offline implementer completion scanning; never serialize secrets or input."""
 
 import contextlib
 import io
@@ -172,7 +172,7 @@ def scan(root):
         raise CheckError(
             "Unexpected detect-secrets version; run `uv sync` in the repository root."
         )
-    before = snapshots(root)
+    contents = snapshots(root)
     findings = set()
     redactions = set()
     with default_settings() as settings:
@@ -186,7 +186,7 @@ def scan(root):
         )
         if not get_plugins():
             raise CheckError("No scanner detectors loaded.")
-        for (source, name), content in before.items():
+        for (source, name), content in contents.items():
             if b"\0" in content:
                 raise CheckError(
                     "Binary/NUL-containing content is unsupported; scan incomplete."
@@ -205,8 +205,6 @@ def scan(root):
                 findings.add((source, name, finding.line_number, finding.type))
                 if finding.secret_value:
                     redactions.add(finding.secret_value)
-    if before != snapshots(root):
-        raise CheckError("Files/index changed during scanning; rerun the hook.")
 
     def safe_path(name):
         for value in sorted(redactions, key=len, reverse=True):
@@ -214,15 +212,14 @@ def scan(root):
         return name
 
     return {
-        "status": "FAIL" if findings else ("PASS" if before else "SKIP"),
-        "snapshots": len(before),
+        "status": "FAIL" if findings else ("PASS" if contents else "SKIP"),
         "findings": [
             {"source": source, "path": safe_path(name), "line": line, "type": kind}
             for source, name, line, kind in sorted(findings)
         ],
         "detail": "Potential secrets detected."
         if findings
-        else ("Offline scan completed." if before else "No in-scope changed files."),
+        else ("Offline scan completed." if contents else "No in-scope changed files."),
     }
 
 
@@ -269,42 +266,8 @@ def check(root):
     if process.returncode:
         raise CheckError("Scanner process failed; scan incomplete.")
     try:
-        report = json.loads(process.stdout)
-        status = report["status"]
-        details = {
-            "PASS": "Offline scan completed.",
-            "SKIP": "No in-scope changed files.",
-            "FAIL": "Potential secrets detected.",
-        }
-        if status == "ERROR":
-            if set(report) != {"status", "detail"} or not isinstance(
-                report["detail"], str
-            ):
-                raise ValueError
-            return report
-        if (
-            status not in details
-            or set(report) != {"status", "detail", "snapshots", "findings"}
-            or report["detail"] != details[status]
-            or type(report["snapshots"]) is not int
-            or report["snapshots"] < (0 if status == "SKIP" else 1)
-            or (status == "SKIP" and report["snapshots"] != 0)
-            or not isinstance(report["findings"], list)
-            or bool(report["findings"]) != (status == "FAIL")
-        ):
-            raise ValueError
-        for finding in report["findings"]:
-            if (
-                set(finding) != {"source", "path", "line", "type"}
-                or finding["source"] not in {"index", "worktree"}
-                or type(finding["line"]) is not int
-                or finding["line"] < 1
-                or not isinstance(finding["path"], str)
-                or not isinstance(finding["type"], str)
-            ):
-                raise ValueError
-        return report
-    except (ValueError, KeyError, TypeError):
+        return json.loads(process.stdout)
+    except ValueError:
         raise CheckError("Scanner returned invalid output; scan incomplete.") from None
 
 
@@ -358,7 +321,13 @@ def main():
         payload = json.load(sys.stdin)
         if not isinstance(payload, dict) or not isinstance(payload.get("cwd", ""), str):
             raise CheckError("Expected a JSON object with an optional cwd string.")
-        output = run(payload)
+        if (
+            sys.argv[1:] == ["--implementer-only"]
+            and payload.get("agentName") != "implementer"
+        ):
+            output = {}
+        else:
+            output = run(payload)
     except Exception:
         warning = (
             "[secret-scan ERROR] Hook infrastructure failed; scan NOT verified. "

@@ -1,9 +1,13 @@
 # Implementer Stop: offline secret scanning
 
-The local `implementer` profile runs this separate command alongside its existing
-Ruff `Stop` hook. No other agent, repository-wide hook, or lifecycle event runs
-it. The same agent-scoped-hook-capable CLI and workspace trust requirements apply;
-restart the CLI after editing the profile. No global trust settings are changed.
+Registered in `.github/hooks/secret-scan.json` on `subagentStop`, alongside
+the separate Ruff hook. Its `--implementer-only` option runs the scan only when
+the event's `agentName` is `implementer`. Other subagents silently return `{}`
+without scanning. It does not run at main-agent completion, including when
+`implementer` is selected as the main agent. The agent profile has no duplicate
+registration. The same repository-hook-capable CLI and workspace trust
+requirements as [format-lint](../format-lint/README.md) apply; restart the CLI
+after changing hook registrations. No global trust settings are changed.
 
 ## Setup
 
@@ -50,8 +54,7 @@ one final decision object on stdout. Statuses:
   `[REDACTED]`. Remove the value, use environment/secret-store references, and
   rotate real exposed credentials.
 - `ERROR`: incomplete scan (missing environment or wrong version, Git failure,
-  unmerged files, binary/non-UTF-8 input, exceeded limits, timeout, or files
-  changing mid-scan).
+  unmerged files, binary/non-UTF-8 input, exceeded limits, or timeout).
 
 The decision is always `{}` (never `block`). On `FAIL`/`ERROR`, a warning is
 prepended to the response when the payload carries one, and printed to stderr.
@@ -60,16 +63,13 @@ use a fixed warning.
 
 Limits: 1,000 paths, 2 MiB per snapshot, 20 MiB total, 60 seconds for the
 scanner process. UTF-8 (optionally BOM) text only; archives and encoded values
-are not decoded. Detectors have false positives and negatives, so a pass is not
+are not decoded. The scan checks the contents read at startup; it does not
+recheck for edits made while scanning. Detectors have false positives and negatives, so a pass is not
 proof that no secrets exist. This is developer feedback, not a security boundary;
 CLI hooks can fail open or be disabled.
 
-## Manual check and tests
+## Manual check
 
 ```sh
 printf '{"cwd":"%s"}' "$PWD" | python3 .github/hooks/secret-scan/run.py
-python3 -m unittest discover -s .github/hooks/secret-scan -p 'test_*.py'
 ```
-
-Tests use disposable Git repositories, synthetic tokens assembled at runtime
-(no real credentials, nothing allowlisted), and the real scanner.

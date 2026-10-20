@@ -9,6 +9,27 @@ uv sync
 Installs the hook tools (Ruff, detect-secrets) into the root `.venv`.
 Restart Copilot CLI after changing agents or hooks.
 
+### If `uv sync` fails to download packages
+
+`uv sync` fetches wheels from `pypi.org` and `files.pythonhosted.org`. Corporate
+security tools (for example Microsoft Defender Network Protection) can block the
+second host while `pypi.org` still works. Diagnose with `uv sync -v`; a blocked
+host shows `error sending request` / `Socket is not connected`. Then use one of:
+
+1. **Ask IT to allow `files.pythonhosted.org`.** This is the permanent fix.
+2. **Use an internal PyPI mirror:**
+   `UV_DEFAULT_INDEX=<mirror-url> uv sync`
+3. **Install from a local wheel folder.** On an unrestricted machine with the
+   same OS and CPU, run
+   `pip download ruff==0.17.0 detect-secrets==1.5.0 -d wheels`, copy `wheels/`
+   to the repository root, then run
+   `uv sync --no-index --find-links wheels`.
+4. **TLS interception errors** (certificate failures rather than blocked
+   connections): `UV_NATIVE_TLS=1 uv sync` uses the system certificate store.
+
+Without the `.venv`, the `format-lint` and `secret-scan` hooks report `ERROR`
+instead of passing; they never install dependencies themselves.
+
 ## AGENTS.md
 
 Loaded by every agent. It defines:
@@ -32,11 +53,13 @@ The main agent coordinates and owns commits and final verification.
 
 | Hook | When | What |
 |---|---|---|
-| `format-lint` | `implementer` Stop | Ruff format and lint on changed Python files |
-| `secret-scan` | `implementer` Stop | Offline detect-secrets scan of changed files |
-| `test-run` | Main agent Stop | Runs the unittest files listed in `test-run/selection.local.json`, only when inputs changed |
+| `format-lint` | `subagentStop`, `implementer` only | Ruff format and lint on changed Python files |
+| `secret-scan` | `subagentStop`, `implementer` only | Offline detect-secrets scan of changed files |
+| `test-run` | Main agent Stop | Runs the unittest files listed in `test-run/selection.local.json` on every turn |
 
-Each hook folder has its own README.
+Hooks are registered in `.github/hooks/*.json`. Each hook folder has its own
+README. The two implementer checks do not run for other subagents or the main
+agent.
 
 ## Skills (`.github/skills/`)
 
